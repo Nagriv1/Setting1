@@ -26,13 +26,14 @@ internal sealed class TrayApp : ApplicationContext
     Form? settings, mini;
     public TrayApp()
     {
-        try { if (File.Exists(ConfigPath)) config = JsonSerializer.Deserialize<Config>(File.ReadAllText(ConfigPath)) ?? new(); }
+        try { if (File.Exists(ConfigPath)) config = Config.Load(File.ReadAllText(ConfigPath)); }
         catch { status = "Settings could not be read. Default Gemini settings are active."; }
         icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!)!;
         var menu = new ContextMenuStrip();
         var pause = new ToolStripMenuItem("Pause") { CheckOnClick = true };
         pause.CheckedChanged += (_, _) => { paused = pause.Checked; pending?.Cancel(); tray!.Text = paused ? "Service1 — Paused" : "Service1"; };
         menu.Items.Add(pause);
+        menu.Items.Add("Process clipboard", null, (_, _) => _ = Process("Improve the clipboard text for clarity. Preserve meaning. Return only the replacement text."));
         menu.Items.Add("Settings", null, (_, _) => OpenSettings());
         menu.Items.Add("Open Mini Prompt", null, (_, _) => OpenMini());
         var startup = new ToolStripMenuItem("Start with Windows") { Checked = Startup.Enabled };
@@ -42,8 +43,8 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Icon = icon, Text = "Service1", ContextMenuStrip = menu, Visible = true };
         tray.DoubleClick += (_, _) => OpenSettings();
-        hotkey.Pressed += () => _ = Process("Improve the clipboard text for clarity. Preserve meaning. Return only the replacement text.");
-        if (!hotkey.Set(config.Hotkey)) status = "Hotkey unavailable. Select another hotkey in Settings.";
+        hotkey.Pressed += () => { if(settings==null) _ = Process("Improve the clipboard text for clarity. Preserve meaning. Return only the replacement text."); };
+        if (!hotkey.Set(config.Hotkey,config.HotkeyModifiers)) status = "Hotkey unavailable. Select another hotkey in Settings.";
     }
     async Task Process(string instruction)
     {
@@ -65,26 +66,31 @@ internal sealed class TrayApp : ApplicationContext
     void OpenSettings()
     {
         if(settings!=null){settings.Activate();return;}
-        var f=settings=Window("Service1 Settings ? Gemini",460); f.Icon=icon;
-        var intro=new Label {Text="GEMINI CLOUD ONLY\nClipboard text is sent to Google after your hotkey.\nDefault keys: Nagriv1/Setting1 ? key1 and key2 (public).",Location=new(20,20),Size=new(540,65)};
+        var f=settings=Window("Service1 Settings - Gemini",510); f.Icon=icon;
+        var intro=new Label {Text="GEMINI CLOUD ONLY\nClipboard text is sent to Google after your hotkey.\nDefault keys: Nagriv1/Setting1 - key1 and key2 (public).",Location=new(20,20),Size=new(540,65)};
         var model=new TextBox {Text=config.Model,Location=new(190,110),Width=360};
-        var shortcut=new ComboBox {DropDownStyle=ComboBoxStyle.DropDownList,Location=new(190,160),Width=360};
-        for(int i=1;i<=12;i++)shortcut.Items.Add("Ctrl+Shift+F"+i);
-        shortcut.SelectedIndex=Math.Clamp(config.Hotkey-(int)Keys.F1,0,11);
-        var start=new CheckBox {Text="Start with Windows (current user)",Checked=Startup.Enabled,Location=new(20,210),AutoSize=true};
-        var note=new Label {Text="Model 'auto' prefers a supported Flash Lite model.\nKeys stay in memory for up to 10 minutes. Save refreshes them on\nthe next action. No history, notifications or automatic retries on quota errors.",Location=new(20,250),Size=new(540,65)};
-        var state=new Label {Text=status,Location=new(20,320),Size=new(540,65)};
-        var save=new Button {Text="Save",Location=new(450,410),Width=100};
-        f.Controls.AddRange([intro,new Label {Text="Gemini model",Location=new(20,114),AutoSize=true},model,new Label {Text="Hotkey",Location=new(20,164),AutoSize=true},shortcut,start,note,state,save]);
+        var shortcut=new ShortcutRecorder(config.Hotkey,config.HotkeyModifiers) {Location=new(190,160),Width=360};
+        var record=new Button {Text="Record shortcut",Location=new(190,195),Width=170};
+        var reset=new Button {Text="Use Ctrl + Alt + J",Location=new(370,195),Width=180};
+        record.Click+=(_,_)=>shortcut.Begin();
+        reset.Click+=(_,_)=>shortcut.ShortcutsSet((int)Keys.J,3);
+        var start=new CheckBox {Text="Start with Windows (current user)",Checked=Startup.Enabled,Location=new(20,245),AutoSize=true};
+        var note=new Label {Text="Model 'auto' prefers a supported Flash Lite model.\nKeys stay in memory for up to 10 minutes. Save refreshes them on\nthe next action. No history, notifications or automatic retries on quota errors.",Location=new(20,285),Size=new(540,65)};
+        var state=new Label {Text=status,Location=new(20,355),Size=new(540,65)};
+        var save=new Button {Text="Save",Location=new(450,460),Width=100};
+        shortcut.Feedback+=message=>state.Text=message;
+        shortcut.RecordingChanged+=recording=>{if(recording)hotkey.Suspend();else if(!hotkey.Set(config.Hotkey,config.HotkeyModifiers))state.Text="Previous shortcut became unavailable. Choose another or use the tray action.";};
+        f.Controls.AddRange([record,reset,intro,new Label {Text="Gemini model",Location=new(20,114),AutoSize=true},model,new Label {Text="Hotkey",Location=new(20,164),AutoSize=true},shortcut,start,note,state,save]);
         save.Click+=(_,_)=>{
             try{
-                var next=new Config {Model=model.Text.Trim(),Hotkey=(int)Keys.F1+shortcut.SelectedIndex};Policy.Validate(next);
-                if(!hotkey.Set(next.Hotkey)){hotkey.Set(config.Hotkey);state.Text="Hotkey in use. Choose another.";return;}
+                if(shortcut.Recording){state.Text="Finish recording your shortcut before saving.";return;}
+                var next=new Config {Model=model.Text.Trim(),Hotkey=shortcut.ShortcutKey,HotkeyModifiers=shortcut.ShortcutModifiers};Policy.Validate(next);
+                if(!hotkey.Set(next.Hotkey,next.HotkeyModifiers)){hotkey.Set(config.Hotkey,config.HotkeyModifiers);state.Text="Hotkey in use. Choose another.";return;}
                 pending?.Cancel();models.Clear();
                 if(start.Checked!=Startup.Enabled)Startup.Set(start.Checked);
                 Directory.CreateDirectory(Folder);File.WriteAllText(ConfigPath+".new",JsonSerializer.Serialize(next));File.Move(ConfigPath+".new",ConfigPath,true);
                 config=next;status="Settings saved.";f.Close();
-            }catch{hotkey.Set(config.Hotkey);state.Text="Could not save. Check model, hotkey and Windows permissions.";}
+            }catch{hotkey.Set(config.Hotkey,config.HotkeyModifiers);state.Text="Could not save. Check model, hotkey and Windows permissions.";}
         };
         f.FormClosed+=(_,_)=>{settings=null;f.Dispose();};f.Show();
     }

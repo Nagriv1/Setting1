@@ -7,13 +7,28 @@ namespace Service1;
 public sealed record Config
 {
     public string Model { get; init; } = "auto";
-    public int Hotkey { get; init; } = (int)Keys.F8;
+    public int Hotkey { get; init; } = (int)Keys.J;
+    public uint HotkeyModifiers { get; init; } = 3; // Ctrl + Alt
+    public static Config Load(string json)
+    {
+        var c=JsonSerializer.Deserialize<Config>(json) ?? new();
+        using var doc=JsonDocument.Parse(json);
+        if(!doc.RootElement.TryGetProperty(nameof(HotkeyModifiers),out _))
+            c=c.Hotkey==(int)Keys.F8 ? c with {Hotkey=(int)Keys.J,HotkeyModifiers=3} : c with {HotkeyModifiers=6};
+        Policy.Validate(c); return c;
+    }
+}
+public static class Shortcuts
+{
+    public static bool Valid(int key,uint modifiers) => modifiers is 3 or 6 or 7 &&
+        (key>=(int)Keys.A && key<=(int)Keys.Z || key>=(int)Keys.D0 && key<=(int)Keys.D9 || key>=(int)Keys.F1 && key<=(int)Keys.F11 || key==(int)Keys.Space);
+    public static string Display(int key,uint modifiers) => "Ctrl + "+((modifiers&1)!=0?"Alt + ":"")+((modifiers&4)!=0?"Shift + ":"")+(key>=(int)Keys.D0 && key<=(int)Keys.D9 ? ((char)key).ToString() : ((Keys)key).ToString());
 }
 public static class Policy
 {
     public static void Validate(Config c)
     {
-        if (!Regex.IsMatch(c.Model, @"\A[a-zA-Z0-9_.-]{1,100}\z") || c.Hotkey < (int)Keys.F1 || c.Hotkey > (int)Keys.F12) throw new InvalidOperationException();
+        if (!Regex.IsMatch(c.Model, @"\A[a-zA-Z0-9_.-]{1,100}\z") || !Shortcuts.Valid(c.Hotkey,c.HotkeyModifiers)) throw new InvalidOperationException();
     }
 }
 public interface IClip { uint Sequence { get; } string Read(); void Write(string text); }
