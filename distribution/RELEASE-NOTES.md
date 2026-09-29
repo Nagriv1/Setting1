@@ -1,9 +1,12 @@
-# Service1 1.0.2 ? Gemini-only unsigned preview
+Service1 1.0.3 unsigned preview
 
-Silent tray workflow: copy, Ctrl+Alt+J, wait, paste. Fetches the owner's public key1/key2 files from Nagriv1/Setting1 on explicit processing; no local model or backend. Model auto prefers supported Flash Lite. Public keys are not secret and may be blocked or exhausted. Keys never appear in the executable or logs.
+- Four ordered key sources: key1, key2, key3, key4. Each action starts with key1; duplicate values are removed. Authentication failures and HTTP 5xx try the next key, with a bounded delay for server errors. Network ambiguity, invalid requests, and quota errors stop rather than risking repeated charges.
+- At most five generation attempts per rolling minute, including failed attempts. HTTP 429 pauses all keys for at least one minute and honors a longer Retry-After header. Daily quota exhaustion requires waiting for Google quota reset. A full action has a 90-second deadline.
+- Auto model prefers available gemini-3.5-flash-lite, then gemini-3.1-flash-lite, then available text Flash models. Availability does not guarantee free quota. Explicit models remain configurable.
+- Default coding instructions request simple readable code without Markdown fences or extra explanation. Mini Prompt can override the style.
+- Ctrl+Alt+J default; Settings can record a custom shortcut. Tray Process clipboard remains available if a shortcut conflicts.
 
-Download **Service1.exe** and verify its SHA-256 against SHA256SUMS.txt. It is a self-contained Windows x64 executable; no .NET installation is required. Run it normally or use the verified-download PowerShell installer. Optional normal Windows startup and one-time Mini Prompt are included.
+Google quotas are per project, not per key. More keys in one project do not increase capacity. 2-5 requests/minute and 10/day cannot be guaranteed by the app; check the account's model quota, input/output token limits and billing settings. No paid generation was used for validation.
+Official references: https://ai.google.dev/gemini-api/docs/rate-limits and https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
 
-Unsigned preview: Windows may warn/block. Build and fake-HTTP/clipboard tests pass; no paid Gemini tests or full interactive Windows validation performed. See README.md and SECURITY.md. This version sends explicit clipboard requests to Google and has no LOCAL ONLY mode.
-
-New in 1.0.2: Ctrl+Alt+J default, live custom shortcut recording, reset/cancel controls, conflict-safe registration, old-default migration, and tray Process clipboard fallback. Exit the previous version before launching this update.
+Public repository keys are exposed and may be abused or blocked; this release cannot make them secret. Unsigned software may trigger Windows warnings. No security controls or execution policies are bypassed.

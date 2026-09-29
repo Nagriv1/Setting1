@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
  [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')][string]$OfficialRepository='Nagriv1/Setting1',
- [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9.-]+$')][string]$Version='v1.0.2-single',
+ [ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9.-]+$')][string]$Version='v1.0.3-single',
  [Parameter(Mandatory)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$Sha256,
  [ValidatePattern('^[A-Fa-f0-9]{40}$')][string]$SignerThumbprint,
  [switch]$StartWithWindows

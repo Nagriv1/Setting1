@@ -46,18 +46,32 @@ public sealed class Processor(IClip clipboard)
     }
 }
 public sealed class ServiceError(string message) : Exception(message);
-public sealed class Models(HttpMessageHandler? testHandler = null)
+public sealed class Models(HttpMessageHandler? testHandler = null, Func<DateTimeOffset>? clock = null)
 {
     static readonly string[] Sources = [
         "https://raw.githubusercontent.com/Nagriv1/Setting1/refs/heads/main/key1",
-        "https://raw.githubusercontent.com/Nagriv1/Setting1/refs/heads/main/key2"];
+        "https://raw.githubusercontent.com/Nagriv1/Setting1/refs/heads/main/key2",
+        "https://raw.githubusercontent.com/Nagriv1/Setting1/refs/heads/main/key3",
+        "https://raw.githubusercontent.com/Nagriv1/Setting1/refs/heads/main/key4"];
     string[]? keys;
+    readonly Queue<DateTimeOffset> attempts=new();
+    DateTimeOffset cooldown;
+    DateTimeOffset Now => clock?.Invoke() ?? DateTimeOffset.UtcNow;
+    void ReserveAttempt()
+    {
+        while(attempts.Count>0 && Now-attempts.Peek()>=TimeSpan.FromMinutes(1)) attempts.Dequeue();
+        if(attempts.Count>=5) throw new ServiceError("Five requests were attempted in the last minute. Wait a minute; clipboard preserved.");
+        attempts.Enqueue(Now);
+    }
     DateTime fetched;
     string? selectedModel;
     public void Clear() { keys=null; selectedModel=null; }
     public async Task<string> Generate(Config c,string instruction,string input,CancellationToken token)
     {
         Policy.Validate(c);
+        if(Now<cooldown) throw new ServiceError("Gemini is cooling down after a rate limit. Try later; clipboard preserved.");
+        using var deadline=CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(90)); token=deadline.Token;
         using var handler=testHandler==null ? new HttpClientHandler { AllowAutoRedirect=false,UseProxy=false,UseCookies=false } : null;
         using var client=new HttpClient(testHandler ?? handler!,disposeHandler:false) { Timeout=TimeSpan.FromSeconds(90),MaxResponseContentBufferSize=2_000_000 };
         if(keys==null || DateTime.UtcNow-fetched>TimeSpan.FromMinutes(10))
@@ -73,7 +87,7 @@ public sealed class Models(HttpMessageHandler? testHandler = null)
                     if(Regex.IsMatch(value,@"\A[A-Za-z0-9_.-]{20,2048}\z") && !found.Contains(value)) found.Add(value);
                 } catch(OperationCanceledException){throw;} catch { }
             }
-            if(found.Count==0) throw new ServiceError("Could not load either GitHub key file. Check your connection and repository files.");
+            if(found.Count==0) throw new ServiceError("Could not load the four GitHub key files. Check your connection and repository files.");
             keys=found.ToArray(); fetched=DateTime.UtcNow; selectedModel=null;
         }
         foreach(var key in keys)
@@ -98,7 +112,8 @@ public sealed class Models(HttpMessageHandler? testHandler = null)
                         .Where(m=>m.TryGetProperty("supportedGenerationMethods",out var methods)&&methods.EnumerateArray().Any(v=>v.GetString()=="generateContent"))
                         .Select(m=>m.GetProperty("name").GetString()!.Replace("models/",""))
                         .Where(n=>n.StartsWith("gemini-") && n.Contains("flash") && !n.Contains("image") && !n.Contains("audio") && !n.Contains("tts") && !n.Contains("live"))
-                        .OrderBy(n=>n.Contains("preview")||n.Contains("exp")?1:0)
+                        .OrderBy(n=>n=="gemini-3.5-flash-lite"?0:n=="gemini-3.1-flash-lite"?1:2)
+                        .ThenBy(n=>n.Contains("preview")||n.Contains("exp")?1:0)
                         .ThenBy(n=>n.Contains("lite")?0:1).ThenByDescending(n=>n,StringComparer.Ordinal).FirstOrDefault();
                     if(selectedModel==null) throw new ServiceError("No compatible Flash model found. Enter a supported Gemini model in Settings.");
                 }
@@ -107,6 +122,7 @@ public sealed class Models(HttpMessageHandler? testHandler = null)
             using var request=new HttpRequestMessage(HttpMethod.Post,"https://generativelanguage.googleapis.com/v1beta/models/"+Uri.EscapeDataString(model)+":generateContent");
             request.Headers.Add("x-goog-api-key",key);
             request.Content=JsonContent.Create(new {systemInstruction=new {parts=new[]{new{text=instruction}}},contents=new[]{new {parts=new[]{new{text=input}}}},generationConfig=new {maxOutputTokens=4096}});
+            ReserveAttempt();
             using var response=await client.SendAsync(request,token);
             if(response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) continue;
             if(response.StatusCode==HttpStatusCode.BadRequest)
@@ -114,6 +130,7 @@ public sealed class Models(HttpMessageHandler? testHandler = null)
                 string errorBody=await response.Content.ReadAsStringAsync(token);
                 if(errorBody.Contains("API_KEY_INVALID",StringComparison.Ordinal)||errorBody.Contains("API_KEY_EXPIRED",StringComparison.Ordinal)) continue;
             }
+            if((int)response.StatusCode>=500) { await Task.Delay(1000,token); continue; }
             Check(response);
             using var json=JsonDocument.Parse(await response.Content.ReadAsStringAsync(token));
             token.ThrowIfCancellationRequested();
@@ -121,11 +138,17 @@ public sealed class Models(HttpMessageHandler? testHandler = null)
             return string.Concat(json.RootElement.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts").EnumerateArray().Where(x=>x.TryGetProperty("text",out _) && !(x.TryGetProperty("thought",out var thought)&&thought.ValueKind==JsonValueKind.True)).Select(x=>x.GetProperty("text").GetString()));
         }
         Clear();
-        throw new ServiceError("Both GitHub keys were rejected by Gemini. Replace them in the repository; publicly exposed keys may be blocked by Google.");
+        throw new ServiceError("All configured keys failed. Check Settings and your Google account; public keys may be blocked. Clipboard preserved.");
     }
-    static void Check(HttpResponseMessage response)
+    void Check(HttpResponseMessage response)
     {
-        if(response.StatusCode==(HttpStatusCode)429) throw new ServiceError("Gemini quota or rate limit reached. No automatic retry was made. Wait or check your account quota.");
+        if(response.StatusCode==(HttpStatusCode)429)
+        {
+            var retry=response.Headers.RetryAfter;
+            var until=retry?.Date ?? Now+(retry?.Delta ?? TimeSpan.FromMinutes(1));
+            cooldown=until>Now.AddMinutes(1)?until:Now.AddMinutes(1);
+            throw new ServiceError("Gemini quota reached. Waiting at least one minute; keys in the same project share quota. Check your account if the daily limit is exhausted.");
+        }
         if(!response.IsSuccessStatusCode) throw new ServiceError("Gemini request failed. Check the model and account settings. Clipboard preserved.");
     }
 }

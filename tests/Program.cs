@@ -22,10 +22,24 @@ Assert(clip.Text=="success");
 foreach(var code in new[]{200,403,429}){
  var handler=new FakeHttp(code);var service=new Models(handler);bool failed=false;
  try{Assert(await service.Generate(new Config(),"instruction","sample",CancellationToken.None)=="answer");}catch(ServiceError){failed=true;}
- Assert(failed==(code!=200));Assert(handler.Downloads==2);
- Assert(handler.Posts==(code==403?2:1));
- if(code==200){await service.Generate(new Config(),"instruction","sample",CancellationToken.None);Assert(handler.Downloads==2);}
+ Assert(failed==(code!=200));Assert(handler.Downloads==4);
+ Assert(handler.Posts==(code==403?4:1));
+ if(code==200){await service.Generate(new Config(),"instruction","sample",CancellationToken.None);Assert(handler.Downloads==4);}
 }
+var now=DateTimeOffset.UtcNow;
+var quotaHttp=new FakeHttp(429);var quotaService=new Models(quotaHttp,()=>now);
+for(int i=0;i<2;i++){try{await quotaService.Generate(new Config(),"x","x",CancellationToken.None);}catch(ServiceError){}}
+Assert(quotaHttp.Posts==1);
+now=now.AddMinutes(2);
+try{await quotaService.Generate(new Config(),"x","x",CancellationToken.None);}catch(ServiceError){}
+Assert(quotaHttp.Posts==2);
+var limitedHttp=new FakeHttp(200);var limited=new Models(limitedHttp,()=>now);
+for(int i=0;i<6;i++){try{await limited.Generate(new Config(),"x","x",CancellationToken.None);}catch(ServiceError){}}
+Assert(limitedHttp.Posts==5);
+now=now.AddMinutes(1);await limited.Generate(new Config(),"x","x",CancellationToken.None);Assert(limitedHttp.Posts==6);
+var fallbackHttp=new FakeHttp(200,3);var fallback=new Models(fallbackHttp);
+Assert(await fallback.Generate(new Config(),"x","x",CancellationToken.None)=="answer");
+Assert(fallbackHttp.Posts==4 && string.Join(",",fallbackHttp.KeyOrder)=="1,2,3,4");
 Exception? nativeFailure=null;
 var thread=new Thread(()=>{
  try{
@@ -46,12 +60,12 @@ var thread=new Thread(()=>{
 });thread.SetApartmentState(ApartmentState.STA);thread.Start();thread.Join();if(nativeFailure!=null)throw nativeFailure;
 Console.WriteLine($"PASS: {passed} assertions; no real network or paid model calls.");
 sealed class FakeClip:IClip{public string Text="original";public uint Stamp=1;public int Writes;public uint Sequence=>Stamp;public string Read()=>Text;public void Write(string text){Text=text;Stamp++;Writes++;}}
-sealed class FakeHttp(int status):HttpMessageHandler{
- public int Downloads,Posts;
+sealed class FakeHttp(int status,int rejectFirst=0):HttpMessageHandler{
+ public int Downloads,Posts;public List<string> KeyOrder=new();
  protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage r,CancellationToken t){
   if(r.RequestUri!.Host=="raw.githubusercontent.com"){Downloads++;return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent(new string('x',30)+Downloads)});}
   if(!r.Headers.Contains("x-goog-api-key"))throw new Exception("Missing key header");
   if(r.Method==HttpMethod.Get)return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK){Content=new StringContent("{\"models\":[{\"name\":\"models/gemini-test-flash-lite\",\"supportedGenerationMethods\":[\"generateContent\"]}]}")});
-  Posts++;return Task.FromResult(new HttpResponseMessage((HttpStatusCode)status){Content=new StringContent("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"answer\"}]}}]}")});
+  Posts++;KeyOrder.Add(r.Headers.GetValues("x-goog-api-key").Single()[30..]);return Task.FromResult(new HttpResponseMessage((HttpStatusCode)(Posts<=rejectFirst?403:status)){Content=new StringContent("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"answer\"}]}}]}")});
  }
 }

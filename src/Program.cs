@@ -31,9 +31,9 @@ internal sealed class TrayApp : ApplicationContext
         icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!)!;
         var menu = new ContextMenuStrip();
         var pause = new ToolStripMenuItem("Pause") { CheckOnClick = true };
-        pause.CheckedChanged += (_, _) => { paused = pause.Checked; pending?.Cancel(); tray!.Text = paused ? "Service1 — Paused" : "Service1"; };
+        pause.CheckedChanged += (_, _) => { paused = pause.Checked; pending?.Cancel(); tray!.Text = paused ? "Service1 â€” Paused" : "Service1"; };
         menu.Items.Add(pause);
-        menu.Items.Add("Process clipboard", null, (_, _) => _ = Process("Improve the clipboard text for clarity. Preserve meaning. Return only the replacement text."));
+        menu.Items.Add("Process clipboard", null, (_, _) => _ = Process("If the clipboard contains a coding task, solve it with simple, readable code and natural variable names. If it contains code to improve, preserve its behavior unless a change is requested. Use minimal useful comments, no unnecessary abstractions, no Markdown fences, and no explanation unless requested. Otherwise improve the text for clarity while preserving meaning. Return only the replacement content."));
         menu.Items.Add("Settings", null, (_, _) => OpenSettings());
         menu.Items.Add("Open Mini Prompt", null, (_, _) => OpenMini());
         var startup = new ToolStripMenuItem("Start with Windows") { Checked = Startup.Enabled };
@@ -43,7 +43,7 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
         tray = new NotifyIcon { Icon = icon, Text = "Service1", ContextMenuStrip = menu, Visible = true };
         tray.DoubleClick += (_, _) => OpenSettings();
-        hotkey.Pressed += () => { if(settings==null) _ = Process("Improve the clipboard text for clarity. Preserve meaning. Return only the replacement text."); };
+        hotkey.Pressed += () => { if(settings==null) _ = Process("If the clipboard contains a coding task, solve it with simple, readable code and natural variable names. If it contains code to improve, preserve its behavior unless a change is requested. Use minimal useful comments, no unnecessary abstractions, no Markdown fences, and no explanation unless requested. Otherwise improve the text for clarity while preserving meaning. Return only the replacement content."); };
         if (!hotkey.Set(config.Hotkey,config.HotkeyModifiers)) status = "Hotkey unavailable. Select another hotkey in Settings.";
     }
     async Task Process(string instruction)
@@ -67,7 +67,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         if(settings!=null){settings.Activate();return;}
         var f=settings=Window("Service1 Settings - Gemini",510); f.Icon=icon;
-        var intro=new Label {Text="GEMINI CLOUD ONLY\nClipboard text is sent to Google after your hotkey.\nDefault keys: Nagriv1/Setting1 - key1 and key2 (public).",Location=new(20,20),Size=new(540,65)};
+        var intro=new Label {Text="GEMINI CLOUD ONLY\nClipboard text is sent to Google after your hotkey.\nDefault keys: Nagriv1/Setting1 - key1 to key4, in order (public).",Location=new(20,20),Size=new(540,65)};
         var model=new TextBox {Text=config.Model,Location=new(190,110),Width=360};
         var shortcut=new ShortcutRecorder(config.Hotkey,config.HotkeyModifiers) {Location=new(190,160),Width=360};
         var record=new Button {Text="Record shortcut",Location=new(190,195),Width=170};
