@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+package/
+*.zip
+*.pfx
+*.p12
+*.key
+.env*
+settings.json
+settings.json.new
