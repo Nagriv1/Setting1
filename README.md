@@ -24,15 +24,33 @@ This final version is **cloud-only**, as requested. It has no LOCAL ONLY setting
 
 Startup is optional and uses the named current-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Service1` entry. Disable it in Settings or the tray. To remove, disable startup, exit, and delete the install folder. Optional config is `%LOCALAPPDATA%\Service1\Config\gemini-settings.json`.
 
-## PowerShell installation
+## One-command PowerShell installation
 
-Download and inspect Install-Service1.ps1 from the official release, then run it under your existing execution policy:
+Paste this entire command into ordinary PowerShell (no administrator required). It downloads, checks the pinned SHA-256 and signature status, installs per user, and launches Service1 in the tray. It does not change execution policy or security settings. This release is unsigned.
 
 ```powershell
-.\Install-Service1.ps1 -Sha256 PUBLISHED_EXE_SHA256
+& {
+  $ErrorActionPreference='Stop'
+  $url='https://github.com/Nagriv1/Setting1/releases/download/v1.0.1-single/Service1.exe'
+  $hash='E50BF42E814D6D15246739A16F3CD4F747A642C305FCC0EB6F0C547746346FA8'
+  $dir=Join-Path $env:LOCALAPPDATA 'Programs\Service1\v1.0.1-single'
+  $tmp=Join-Path $env:TEMP ('Service1-'+[guid]::NewGuid()+'.exe')
+  try {
+    Invoke-WebRequest $url -OutFile $tmp -UseBasicParsing
+    if((Get-FileHash $tmp -Algorithm SHA256).Hash -ne $hash){throw 'Download verification failed'}
+    if((Get-AuthenticodeSignature $tmp).Status -notin @('Valid','NotSigned')){throw 'Invalid signature'}
+    New-Item -ItemType Directory -Force -Path $dir,(Join-Path $env:LOCALAPPDATA 'Service1\Config') | Out-Null
+    $exe=Join-Path $dir 'Service1.exe'
+    if(Test-Path -LiteralPath $exe){
+      if((Get-FileHash $exe -Algorithm SHA256).Hash -ne $hash){throw 'A different installation exists; exit and review it first'}
+    }else{Move-Item -LiteralPath $tmp -Destination $exe}
+    Start-Process -FilePath $exe -WindowStyle Hidden
+    Write-Host 'Service1 launched. Look for its tray icon. Hotkey: Ctrl+Shift+F8.'
+  }finally{if(Test-Path -LiteralPath $tmp){Remove-Item -LiteralPath $tmp -Force}}
+}
 ```
 
-Use the executable SHA-256 from SHA256SUMS.txt. Optional `-StartWithWindows` enables normal startup. The script downloads the self-contained executable, verifies the digest and any present signature before installation, and launches it per user. No execution-policy, Defender, SmartScreen or UAC changes. Start with Windows can also be enabled in the tray.
+Optional Start with Windows is available in the tray. The separately downloadable Install-Service1.ps1 offers the same installation with optional startup, where your existing execution policy allows scripts.
 
 ## Build
 

@@ -26,15 +26,18 @@ Get-AuthenticodeSignature .\distribution\Install-Service1.ps1
 
 If an EXE/MSI installer is added later, sign its completed bytes with the same `signtool sign` command and verify with `signtool verify /pa /all /v`. Sign inner binaries before signing the outer installer. Publish the expected certificate thumbprint separately and update it transparently during certificate rotation.
 
-6. Package **only** `Service1.exe`, `Service1.dll`, `Service1.deps.json`, `Service1.runtimeconfig.json` at the ZIP root. Sign before hashing/packaging. Name the package `Service1-win-x64.zip`. Generate its digest:
+6. Publish a self-contained Windows x64 single file with the pinned runtime, then sign the finished EXE before computing its digest:
 
 ```powershell
-Get-FileHash .\Service1-win-x64.zip -Algorithm SHA256
+dotnet publish src/Service1.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:RuntimeFrameworkVersion=10.0.12 -p:DebugType=None --source https://api.nuget.org/v3/index.json -o release
+Get-FileHash .\release\Service1.exe -Algorithm SHA256
 ```
 
-7. Publish the ZIP, signed installer script, digest and signer identity on the official versioned downloads folder. Replace README example values with that real repository, tag and hash. Protect the publication channel; an attacker who replaces both package and published hash defeats hash-only authenticity checks.
+The workflow publishes an unsigned preview when no certificate is configured. Publish signing only through a protected signing system; never place certificate private keys in this repository.
+
+7. Publish Service1.exe, the installer script, SHA256SUMS.txt and signer identity on the official GitHub release. Replace README example values with that real repository, tag and hash. Protect the publication channel; an attacker who replaces both executable and published hash defeats hash-only authenticity checks.
 8. Test both installation methods in a clean Windows account, including wrong hash, tampered archive, wrong signer, missing runtime, startup on/off and restricted organizational policies. Then promote the release.
 
-Consumers should compare `Get-FileHash` with a trusted digest, and use `Get-AuthenticodeSignature` or SignTool to validate downloaded binaries. Do not use Unblock-File, execution-policy bypass, Defender exclusions or SmartScreen overrides as an installation step. Unsigned downloads—and even newly signed software without established reputation—may trigger Windows security warnings. No warning-free execution guarantee is possible.
+Consumers should compare `Get-FileHash` with a trusted digest, and use `Get-AuthenticodeSignature` or SignTool to validate downloaded binaries. Do not use Unblock-File, execution-policy bypass, Defender exclusions or SmartScreen overrides as an installation step. Unsigned downloadsâ€”and even newly signed software without established reputationâ€”may trigger Windows security warnings. No warning-free execution guarantee is possible.
 
 Authoritative reference: [Microsoft SignTool documentation](https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool).
