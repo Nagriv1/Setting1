@@ -63,3 +63,14 @@ Google quotas are per project, not per key. More keys in one project do not incr
 Official references: https://ai.google.dev/gemini-api/docs/rate-limits and https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
 
 Public repository keys are exposed and may be abused or blocked; this release cannot make them secret. Unsigned software may trigger Windows warnings. No security controls or execution policies are bypassed.
+
+
+### Single-line installation (1.0.3)
+
+Exit the old Service1 tray app first. Run in PowerShell:
+
+```powershell
+&{iwr https://github.com/Nagriv1/Setting1/raw/main/install.ps1 -OutFile $env:TEMP\s1.ps1 -ea Stop;& $env:TEMP\s1.ps1}
+```
+
+The downloaded installer pins the 1.0.3 EXE SHA-256 and checks its signature status. The script itself is trusted through HTTPS and this repository; inspect it before execution. Existing execution policies apply. No custom short domain has been registered. If scripts are blocked, use the release EXE.
